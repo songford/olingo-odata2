@@ -176,7 +176,7 @@ public final class JPAEntityParser {
       return navigationMap;
     }
     if (navigationPropertyList != null
-        && navigationPropertyList.size() != 0) {
+        && !navigationPropertyList.isEmpty()) {
 
     	try {
     		for (EdmNavigationProperty navigationProperty : navigationPropertyList) {
@@ -532,11 +532,12 @@ public final class JPAEntityParser {
 	        EdmAssociationEnd end = navigationProperty.getRelationship().getEnd(navigationProperty.getToRole());
 	        switch (end.getMultiplicity()) {
 	        case MANY:
-	          params = new Class<?>[] { navPropMapping.getJPAType() };
+	          params = new Class<?>[] { navPropMapping != null ? navPropMapping.getJPAType() : null };
 	          break;
 	        case ONE:
           case ZERO_TO_ONE:
 	          params = new Class<?>[] { ((JPAEdmMapping) end.getEntityType().getMapping()).getJPAType() };
+	          break;
 	        default:
 	          break;
 	        }
@@ -575,7 +576,7 @@ public final class JPAEntityParser {
           continue;
         }
         String methodName = getAccessModifierName(property.getName(), property.getMapping(), accessModifier);
-        String[] nameParts = methodName.split("\\.");
+        String[] nameParts = methodName != null ? methodName.split("\\.") : new String[0];
         try {
           if (nameParts.length > 1) {
             if (!embeddableKey.containsKey(propertyName)) {
@@ -590,7 +591,8 @@ public final class JPAEntityParser {
         					  new Class<?>[] { String.class,Object.class }));
         		  }else {
         			  accessModifierMap.put(propertyName, jpaEntityType.getMethod(methodName,
-        					  new Class<?>[] { jpaEdmMapping.getJPAType() }));
+        					  new Class<?>[] { jpaEdmMapping != null ? 
+        					      jpaEdmMapping.getJPAType() : null }));
         		  }
         	  } else {
         		  JPAEdmMapping jpaEdmMapping = (JPAEdmMapping) property.getMapping();

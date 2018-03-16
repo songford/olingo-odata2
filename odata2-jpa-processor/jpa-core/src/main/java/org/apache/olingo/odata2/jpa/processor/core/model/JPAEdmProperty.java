@@ -57,7 +57,7 @@ import org.apache.olingo.odata2.jpa.processor.api.model.JPAEdmPropertyView;
 import org.apache.olingo.odata2.jpa.processor.api.model.JPAEdmReferentialConstraintView;
 import org.apache.olingo.odata2.jpa.processor.api.model.JPAEdmSchemaView;
 import org.apache.olingo.odata2.jpa.processor.core.access.model.JPAEdmNameBuilder;
-import org.apache.olingo.odata2.jpa.processor.core.access.model.JPATypeConvertor;
+import org.apache.olingo.odata2.jpa.processor.core.access.model.JPATypeConverter;
 
 public class JPAEdmProperty extends JPAEdmBaseViewImpl implements
     JPAEdmPropertyView, JPAEdmComplexPropertyView {
@@ -332,7 +332,7 @@ public class JPAEdmProperty extends JPAEdmBaseViewImpl implements
 
       boolean isForeignKey = joinColumn != null;
       JPAEdmNameBuilder.build(JPAEdmProperty.this, isBuildModeComplexType, skipDefaultNaming, isForeignKey);
-      EdmSimpleTypeKind simpleTypeKind = JPATypeConvertor
+      EdmSimpleTypeKind simpleTypeKind = JPATypeConverter
           .convertToEdmSimpleType(jpaAttribute
               .getJavaType(), jpaAttribute);
       simpleProperty.setType(simpleTypeKind);
@@ -371,7 +371,7 @@ public class JPAEdmProperty extends JPAEdmBaseViewImpl implements
         ODataJPARuntimeException {
       joinColumnNames = joinColumnNames == null ? new ArrayList<String[]>() : joinColumnNames;
       String[] name = { null, null };
-      name[0] = joinColumn.name().equals("") == true ? jpaAttribute.getName() : joinColumn.name();
+      name[0] = "".equals(joinColumn.name()) == true ? jpaAttribute.getName() : joinColumn.name();
 
       EntityType<?> referencedEntityType = null;
       if (jpaAttribute.isCollection()) {
@@ -381,7 +381,7 @@ public class JPAEdmProperty extends JPAEdmBaseViewImpl implements
         referencedEntityType = metaModel.entity(jpaAttribute.getJavaType());
       }
 
-      if (joinColumn.referencedColumnName().equals("")) {
+      if ("".equals(joinColumn.referencedColumnName())) {
         for (Attribute<?, ?> referencedAttribute : referencedEntityType.getAttributes()) {
           if (referencedAttribute.getPersistentAttributeType() == PersistentAttributeType.BASIC &&
               ((SingularAttribute<?, ?>) referencedAttribute).isId()) {

@@ -16,31 +16,19 @@
  * specific language governing permissions and limitations
  * under the License.
  ******************************************************************************/
-package org.apache.olingo.odata2.api.edm.provider;
+package org.apache.olingo.odata2.jpa.processor.core.mock.data;
 
-import java.io.InputStream;
+import javax.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
 
-import org.apache.olingo.odata2.api.ep.EntityProviderException;
-import org.apache.olingo.odata2.api.rt.RuntimeDelegate;
+public class EntityWithXmlAdapterOnProperty {
+	private EntityWithXmlAdapterOnProperty self;
 
-/**
- * EDM Provider Factory which can be used to create an edm provider (e.g. from a metadata document)
- * 
- * 
- */
-public class EdmProviderFactory {
+	@XmlJavaTypeAdapter(XmlAdapter.class)
+	public EntityWithXmlAdapterOnProperty getSelf() {
+		return self;
+	}
 
-  private EdmProviderFactory() {
-    
-  }
-  /**
-   * Creates and returns an edm provider.
-   * @param metadataXml a metadata xml input stream (means the metadata document)
-   * @param validate true if semantic checks for metadata document input stream shall be done
-   * @return an instance of EdmProvider
-   */
-  public static EdmProvider getEdmProvider(final InputStream metadataXml, final boolean validate)
-      throws EntityProviderException {
-    return RuntimeDelegate.createEdmProvider(metadataXml, validate);
-  }
+	public void setSelf(EntityWithXmlAdapterOnProperty self) {
+		this.self = self;
+	}
 }

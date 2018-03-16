@@ -24,6 +24,7 @@ import org.apache.olingo.odata2.jpa.processor.api.jpql.JPQLSelectSingleContextVi
 import org.apache.olingo.odata2.jpa.processor.api.jpql.JPQLStatement;
 import org.apache.olingo.odata2.jpa.processor.api.jpql.JPQLStatement.JPQLStatementBuilder;
 import org.apache.olingo.odata2.jpa.processor.core.ODataExpressionParser;
+import org.apache.olingo.odata2.jpa.processor.core.ODataParameterizedWhereExpressionUtil;
 
 public class JPQLSelectSingleStatementBuilder extends JPQLStatementBuilder {
 
@@ -37,6 +38,8 @@ public class JPQLSelectSingleStatementBuilder extends JPQLStatementBuilder {
   @Override
   public JPQLStatement build() throws ODataJPARuntimeException {
     jpqlStatement = createStatement(createJPQLQuery());
+    ODataParameterizedWhereExpressionUtil.setJPQLStatement(jpqlStatement.toString());
+    ODataExpressionParser.reInitializePositionalParameters();
     return jpqlStatement;
 
   }
@@ -52,7 +55,7 @@ public class JPQLSelectSingleStatementBuilder extends JPQLStatementBuilder {
     jpqlQuery.append(JPQLStatement.KEYWORD.FROM).append(JPQLStatement.DELIMITER.SPACE);
     jpqlQuery.append(fromClause);
 
-    if (context.getKeyPredicates() != null && context.getKeyPredicates().size() > 0) {
+    if (context.getKeyPredicates() != null && !context.getKeyPredicates().isEmpty()) {
       jpqlQuery.append(JPQLStatement.DELIMITER.SPACE);
       jpqlQuery.append(JPQLStatement.KEYWORD.WHERE).append(JPQLStatement.DELIMITER.SPACE);
       jpqlQuery.append(ODataExpressionParser

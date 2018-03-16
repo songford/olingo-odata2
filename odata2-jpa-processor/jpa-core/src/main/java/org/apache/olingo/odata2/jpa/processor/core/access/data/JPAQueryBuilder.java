@@ -18,6 +18,22 @@
  ******************************************************************************/
 package org.apache.olingo.odata2.jpa.processor.core.access.data;
 
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.util.Calendar;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import javax.persistence.EntityManager;
+import javax.persistence.Query;
+import javax.persistence.TemporalType;
+import javax.persistence.metamodel.Attribute;
+import javax.persistence.metamodel.EntityType;
+
 import org.apache.olingo.odata2.api.edm.EdmException;
 import org.apache.olingo.odata2.api.uri.UriInfo;
 import org.apache.olingo.odata2.api.uri.info.DeleteUriInfo;
@@ -35,16 +51,7 @@ import org.apache.olingo.odata2.jpa.processor.api.jpql.JPQLContext;
 import org.apache.olingo.odata2.jpa.processor.api.jpql.JPQLContextType;
 import org.apache.olingo.odata2.jpa.processor.api.jpql.JPQLStatement;
 import org.apache.olingo.odata2.jpa.processor.api.model.JPAEdmMapping;
-
-import javax.persistence.EntityManager;
-import javax.persistence.Query;
-import javax.persistence.metamodel.Attribute;
-import javax.persistence.metamodel.EntityType;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import org.apache.olingo.odata2.jpa.processor.core.ODataParameterizedWhereExpressionUtil;
 
 public class JPAQueryBuilder {
 
@@ -179,7 +186,29 @@ public class JPAQueryBuilder {
     JPQLContext jpqlContext = buildJPQLContext(contextType, uriParserResultView);
     JPQLStatement jpqlStatement = JPQLStatement.createBuilder(jpqlContext).build();
 
-    return em.createQuery(normalizeMembers(em, jpqlStatement.toString()));
+    Query query = em.createQuery(normalizeMembers(em, jpqlStatement.toString()));
+    Map<String, Map<Integer, Object>> parameterizedMap = ODataParameterizedWhereExpressionUtil.
+        getParameterizedQueryMap();
+    if (parameterizedMap != null && parameterizedMap.size() > 0) {
+      for (Entry<String, Map<Integer, Object>> parameterEntry : parameterizedMap.entrySet()) {
+        if (jpqlStatement.toString().contains(parameterEntry.getKey())) {
+          Map<Integer, Object> positionalParameters = parameterEntry.getValue();
+          for (Entry<Integer, Object> param : positionalParameters.entrySet()) {
+            if (param.getValue() instanceof Calendar || param.getValue() instanceof Timestamp) {
+              query.setParameter(param.getKey(), (Calendar) param.getValue(), TemporalType.TIMESTAMP);
+            } else if (param.getValue() instanceof Time) {
+              query.setParameter(param.getKey(), (Time) param.getValue(), TemporalType.TIME);
+            } else {
+              query.setParameter(param.getKey(), param.getValue());
+            }
+          }
+          parameterizedMap.remove(parameterEntry.getKey());
+          ODataParameterizedWhereExpressionUtil.setJPQLStatement(null);
+          break;
+        }
+      }
+    }
+    return query;
   }
 
   
@@ -215,10 +244,10 @@ public class JPAQueryBuilder {
   public JPQLContextType determineJPQLContextType(UriInfo uriParserResultView, UriInfoType type) {
     JPQLContextType contextType = null;
 
-    if (uriParserResultView.getNavigationSegments().size() > 0) {
+    if (!uriParserResultView.getNavigationSegments().isEmpty()) {
       if (type == UriInfoType.GetEntitySet) {
         contextType = JPQLContextType.JOIN;
-      } else if (type == UriInfoType.Delete || type == UriInfoType.Delete || type == UriInfoType.GetEntity
+      } else if (type == UriInfoType.Delete || type == UriInfoType.GetEntity
           || type == UriInfoType.PutMergePatch) {
         contextType = JPQLContextType.JOIN_SINGLE;
       } else if (type == UriInfoType.GetEntitySetCount || type == UriInfoType.GetEntityCount) {
@@ -238,12 +267,20 @@ public class JPAQueryBuilder {
   }
 
   private static final Pattern NORMALIZATION_NEEDED_PATTERN = Pattern.compile(".*[\\s(](\\S+\\.\\S+\\.\\S+).*");
+  private static final Pattern VALUE_NORM_PATTERN = Pattern.compile("(?:^|\\s|\\()'(([^']*)')");
   private static final Pattern JOIN_ALIAS_PATTERN = Pattern.compile(".*\\sJOIN\\s(\\S*\\s\\S*).*");
 
-  private static String normalizeMembers(EntityManager em, String jpqlQuery) {
+  private static String normalizeMembers(EntityManager em, String jpqlQuery) {  
+    
+    //check if clause values are string with x.y.z format
+    //starting with quotes;
+    String query = checkConditionValues(jpqlQuery);
+    //remove any orderby clause parameters  with x.y.z format
+    //no normalization for such clause
+    query = removeExtraClause(jpqlQuery);
     // check if normalization is needed (if query contains "x.y.z" elements
     // starting with space or parenthesis)
-    Matcher normalizationNeededMatcher = NORMALIZATION_NEEDED_PATTERN.matcher(jpqlQuery);
+    Matcher normalizationNeededMatcher = NORMALIZATION_NEEDED_PATTERN.matcher(query);
     if (!normalizationNeededMatcher.find()) {
       return jpqlQuery;
     }
@@ -251,7 +288,7 @@ public class JPAQueryBuilder {
     if (containsEmbeddedAttributes(em, jpqlQuery)) {
       return jpqlQuery;
     }
-
+    
     String normalizedJpqlQuery = jpqlQuery;
     Map<String, String> joinAliases = new HashMap<String, String>();
 
@@ -263,7 +300,6 @@ public class JPAQueryBuilder {
         joinAliases.put(joinAlias[0], joinAlias[1]);
       }
     }
-
     // normalize query
     boolean normalizationNeeded = true;
     while (normalizationNeeded) {
@@ -295,16 +331,52 @@ public class JPAQueryBuilder {
       // use alias
       normalizedJpqlQuery = normalizedJpqlQuery.replaceAll(memberInfo + "\\" + JPQLStatement.DELIMITER.PERIOD,
           alias + JPQLStatement.DELIMITER.PERIOD);
-
+      //check for values like "x.y.z"
+      query = checkConditionValues(normalizedJpqlQuery);
+      query = removeExtraClause(normalizedJpqlQuery);
       // check if further normalization is needed
-      normalizationNeededMatcher = NORMALIZATION_NEEDED_PATTERN.matcher(normalizedJpqlQuery);
+      normalizationNeededMatcher = NORMALIZATION_NEEDED_PATTERN.matcher(query);
       normalizationNeeded = normalizationNeededMatcher.find();
     }
-
+    
     // add distinct to avoid duplicates in result set
     return normalizedJpqlQuery.replaceFirst(
         JPQLStatement.KEYWORD.SELECT + JPQLStatement.DELIMITER.SPACE,
         JPQLStatement.KEYWORD.SELECT_DISTINCT + JPQLStatement.DELIMITER.SPACE);
+  }
+
+  /**
+   * Check if the statement contains ORDERBY having x.y.z kind of format
+   * It will remove those values before checking for normalization 
+   * and later added back
+   * */
+  private static String removeExtraClause(String jpqlQuery) {
+    String query = jpqlQuery;
+    if(query.contains(JPQLStatement.KEYWORD.ORDERBY )){
+      int index = query.indexOf(JPQLStatement.KEYWORD.ORDERBY);
+      query = query.substring(0, index);  
+    }
+    return query;
+  }
+  
+  /**
+   * Check if the statement contains string values having x.y.z kind of format
+   * It will replace those values with parameters before checking for normalization 
+   * and later added back
+   * */
+  private static String checkConditionValues(String jpqlQuery) {
+    int i=0;
+    StringBuffer query= new StringBuffer();
+    query.append(jpqlQuery);
+    Matcher valueMatcher = VALUE_NORM_PATTERN.matcher(query);
+    while (valueMatcher.find()) {
+      String val = valueMatcher.group();
+      int index = query.indexOf(val);
+      String var = "["+ ++i +"] ";
+      query.replace(index, index + val.length(), var);
+      valueMatcher = VALUE_NORM_PATTERN.matcher(query);
+    }
+    return query.toString();
   }
 
   /**

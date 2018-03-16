@@ -23,6 +23,10 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.InputStream;
+import java.sql.Timestamp;
+import java.util.Calendar;
+import java.util.Map;
+import java.util.Map.Entry;
 
 import org.apache.olingo.odata2.api.edm.Edm;
 import org.apache.olingo.odata2.api.edm.EdmException;
@@ -33,6 +37,7 @@ import org.apache.olingo.odata2.api.exception.ODataMessageException;
 import org.apache.olingo.odata2.api.uri.UriParser;
 import org.apache.olingo.odata2.api.uri.expression.ExpressionParserException;
 import org.apache.olingo.odata2.api.uri.expression.FilterExpression;
+import org.apache.olingo.odata2.jpa.processor.api.jpql.JPQLStatement;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -43,19 +48,19 @@ public class ODataFilterExpressionParserTest {
   private static final String NAMESPACE = "SalesOrderProcessing";
   private static final String ENTITY_NOTE = "Note";
   // Index 0 - Is test input and Index 1 - Is expected output
-  private static final String[] EXPRESSION_EQ = { "id eq '123'", "(E1.id = '123')" };
+  private static final String[] EXPRESSION_EQ = { "id eq '123'", "(E1.id LIKE '123' ESCAPE '\\')" };
   private static final String[] EXPRESSION_NE = { "id ne '123'", "(E1.id <> '123')" };
   private static final String[] EXPRESSION_ESCAPE = { "id ne '123''22'", "(E1.id <> '123''22')" };
   private static final String[] EXPRESSION_BINARY_AND =
   {
       "id le '123' and soId eq 123L and not (substringof(id,'123') eq false) eq true",
-      "(((E1.id <= '123') AND (E1.soId = 123L)) AND (NOT(((CASE WHEN ('123' LIKE CONCAT('%',CONCAT(E1.id,'%')"
+      "(((E1.id <= '123') AND (E1.soId = 123)) AND (NOT(((CASE WHEN ('123' LIKE CONCAT('%',CONCAT(E1.id,'%')"
       + ") ESCAPE '\\') "
           + "THEN TRUE ELSE FALSE END) = false)) = true))" };
   private static final String[] EXPRESSION_BINARY_OR = { "id ge '123' or soId gt 123L",
-      "((E1.id >= '123') OR (E1.soId > 123L))" };
+      "((E1.id >= '123') OR (E1.soId > 123))" };
   private static final String[] EXPRESSION_MEMBER_OR = { "id lt '123' or oValue/Currency eq 'INR'",
-      "((E1.id < '123') OR (E1.oValue.Currency = 'INR'))" };
+      "((E1.id < '123') OR (E1.oValue.Currency LIKE 'INR' ESCAPE '\\'))" };
   private static final String[] EXPRESSION_STARTS_WITH = { "startswith(oValue/Currency,'INR')",
       "E1.oValue.Currency LIKE CONCAT('INR','%') ESCAPE '\\'" };
   private static final String[] EXPRESSION_STARTS_WITH_EQUAL = { "startswith(oValue/Currency,'INR') eq true",
@@ -72,7 +77,7 @@ public class ODataFilterExpressionParserTest {
       "((CASE WHEN ('123' LIKE CONCAT('%',CONCAT(E1.id,'%')) ESCAPE '\\') THEN TRUE ELSE FALSE END) <> true)" };
   private static final String[] EXPRESSION_STARTS_WITH_WRONG_OP = { "startswith(oValue/Currency,'INR') lt true", "" };
   private static final String[] EXPRESSION_SUBSTRING_ALL_OP = { "substring(oValue/Currency,1,3) eq 'INR'",
-      "(SUBSTRING(E1.oValue.Currency, 1 + 1 , 3) = 'INR')" };
+      "(SUBSTRING(E1.oValue.Currency, 1 + 1 , 3) LIKE 'INR' ESCAPE '\\')" };
   private static final String[] EXPRESSION_SUBSTRINGOF_INJECTION1 = {
       "substringof('a'' OR 1=1 OR E1.id LIKE ''b',id) eq true",
       "((CASE WHEN (E1.id LIKE CONCAT('%',CONCAT('a'' OR 1=1 OR E1.id LIKE ''b','%')) ESCAPE '\\') "
@@ -92,14 +97,40 @@ public class ODataFilterExpressionParserTest {
       "(E1.id LIKE CONCAT('%','Str''eet') ESCAPE '\\' )" };
   private static final String[] EXPRESSION_PRECEDENCE = {
       "id eq '123' and id ne '123' or (id eq '123' and id ne '123')",
-      "(((E1.id = '123') AND (E1.id <> '123')) OR ((E1.id = '123') AND (E1.id <> '123')))" };
+      "(((E1.id LIKE '123' ESCAPE '\\') AND (E1.id <> '123')) OR ((E1.id LIKE '123' ESCAPE '\\') "
+      + "AND (E1.id <> '123')))" };
   private static final String[] EXPRESSION_DATETIME = { "date eq datetime'2000-01-01T00:00:00'",
-      "(E1.date = {ts '2000-01-01 00:00:00.000'})" };
+      "(E1.date = 2000-01-01 00:00:00.000)" };
   
   private static final String[] EXPRESSION_NULL = { "date eq null", "(E1.date IS null)" };
 
   private static final String[] EXPRESSION_NOT_NULL = { "date ne null", "(E1.date IS NOT null)" };
+  
+  private static final String[] EXPRESSION_STARTSWITH_EQBINARY = { "startswith(id,'123') and text eq 'abc'", 
+      "(E1.id LIKE CONCAT('123','%') ESCAPE '\\' AND (E1.text LIKE 'abc' ESCAPE '\\'))" };
+  
+  private static final String[] EXPRESSION_STARTSWITHEQ_EQBINARY = { "startswith(id,'123') eq true and text eq 'abc'", 
+  "((E1.id LIKE CONCAT('123','%') ESCAPE '\\' ) AND (E1.text LIKE 'abc' ESCAPE '\\'))" };
+  
+  private static final String[] EXPRESSION_EQBINARY_STARTSWITH = { "text eq 'abc' and startswith(id,'123')", 
+      "((E1.text LIKE 'abc' ESCAPE '\\') AND E1.id LIKE CONCAT('123','%') ESCAPE '\\')" };
+  
+  private static final String[] EXPRESSION_EQBINARY_STARTSWITHEQ = { "text eq 'abc' and startswith(id,'123') eq true", 
+  "((E1.text LIKE 'abc' ESCAPE '\\') AND (E1.id LIKE CONCAT('123','%') ESCAPE '\\' ))" };
 
+  private static final String[] EXPRESSION_STARTSWITH_STARTSWITH = { "startswith(text,'abc') and startswith(id,'123')", 
+  "(E1.text LIKE CONCAT('abc','%') ESCAPE '\\' AND E1.id LIKE CONCAT('123','%') ESCAPE '\\')" };
+  
+  private static final String[] EXPRESSION_STARTSWITHEQ_STARTSWITHEQ = { 
+      "startswith(text,'abc') eq true and startswith(id,'123') eq true", 
+  "((E1.text LIKE CONCAT('abc','%') ESCAPE '\\' ) AND (E1.id LIKE CONCAT('123','%') ESCAPE '\\' ))" };
+  
+  private static final String[] EXPRESSION_STARTSWITH_ANDTRUE = {"startswith(text,'abc') and true", 
+      "(E1.text LIKE CONCAT('abc','%') ESCAPE '\\' AND true)"};
+  
+  private static final String[] EXPRESSION_STARTSWITHEQTRUE_ANDTRUE = {"startswith(text,'abc') eq true and true", 
+      "((E1.text LIKE CONCAT('abc','%') ESCAPE '\\' ) AND true)"};
+  
   private static Edm edm = null;
 
   @BeforeClass
@@ -115,35 +146,45 @@ public class ODataFilterExpressionParserTest {
 
   @Test
   public void testDateTime() {
-    assertEquals(EXPRESSION_DATETIME[OUTPUT], parseWhereExpression(
-        EXPRESSION_DATETIME[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_DATETIME[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_DATETIME[OUTPUT], whereExpression);
   }
 
   @Test
   public void testPrecedence() {
-    assertEquals(EXPRESSION_PRECEDENCE[OUTPUT], parseWhereExpression(
-        EXPRESSION_PRECEDENCE[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_PRECEDENCE[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_PRECEDENCE[OUTPUT], whereExpression);
   }
 
   @Test
   public void testSubStringOfSQLInjection() {
-    assertEquals(EXPRESSION_SUBSTRINGOF_INJECTION1[OUTPUT], parseWhereExpression(
-        EXPRESSION_SUBSTRINGOF_INJECTION1[INPUT], false));
-    assertEquals(EXPRESSION_SUBSTRINGOF_INJECTION2[OUTPUT], parseWhereExpression(
-        EXPRESSION_SUBSTRINGOF_INJECTION2[INPUT], false));
-    assertEquals(EXPRESSION_SUBSTRINGOF_INJECTION3[OUTPUT], parseWhereExpression(
-        EXPRESSION_SUBSTRINGOF_INJECTION3[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_SUBSTRINGOF_INJECTION1[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_SUBSTRINGOF_INJECTION1[OUTPUT], whereExpression);
+
+    whereExpression = parseWhereExpression(EXPRESSION_SUBSTRINGOF_INJECTION2[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_SUBSTRINGOF_INJECTION2[OUTPUT], whereExpression);
+
+    whereExpression = parseWhereExpression(EXPRESSION_SUBSTRINGOF_INJECTION3[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_SUBSTRINGOF_INJECTION3[OUTPUT], whereExpression);
   }
 
   @Test
   public void testEndsWithSQLInjection() {
-    assertEquals(EXPRESSION_ENDSWITH_INJECTION1[OUTPUT], parseWhereExpression(
-        EXPRESSION_ENDSWITH_INJECTION1[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_ENDSWITH_INJECTION1[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_ENDSWITH_INJECTION1[OUTPUT], whereExpression);
   }
 
   @Test
   public void testSubStringWithAllOperator() {
-    assertEquals(EXPRESSION_SUBSTRING_ALL_OP[OUTPUT], parseWhereExpression(EXPRESSION_SUBSTRING_ALL_OP[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_SUBSTRING_ALL_OP[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_SUBSTRING_ALL_OP[OUTPUT], whereExpression);
   }
 
   @Test
@@ -153,73 +194,101 @@ public class ODataFilterExpressionParserTest {
 
   @Test
   public void testSubStringOf() {
-    assertEquals(EXPRESSION_SUBSTRING_OF[OUTPUT], parseWhereExpression(EXPRESSION_SUBSTRING_OF[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_SUBSTRING_OF[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_SUBSTRING_OF[OUTPUT], whereExpression);
   }
 
   @Test
   public void testStartsWithEqual() {
-    assertEquals(EXPRESSION_STARTS_WITH_EQUAL[OUTPUT], parseWhereExpression(EXPRESSION_STARTS_WITH_EQUAL[INPUT],
-        false));
+    String whereExpression = parseWhereExpression(EXPRESSION_STARTS_WITH_EQUAL[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_STARTS_WITH_EQUAL[OUTPUT], whereExpression);
   }
 
   @Test
   public void testEscapeCharacters() {
-    assertEquals(EXPRESSION_ESCAPE[OUTPUT], parseWhereExpression(EXPRESSION_ESCAPE[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_ESCAPE[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_ESCAPE[OUTPUT], whereExpression);
   }
 
   @Test
   public void testNotEndsWithToLowerMethod() {
-    assertEquals(EXPRESSION_NOT_ENDS_WITH[OUTPUT], parseWhereExpression(EXPRESSION_NOT_ENDS_WITH[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_NOT_ENDS_WITH[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_NOT_ENDS_WITH[OUTPUT], whereExpression);
   }
 
   @Test
   public void testNestedMethod() {
-    assertEquals(EXPRESSION_NESTED_METHOD[OUTPUT], parseWhereExpression(EXPRESSION_NESTED_METHOD[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_NESTED_METHOD[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_NESTED_METHOD[OUTPUT], whereExpression);
   }
 
   @Test
   public void testNotStartsWith() {
-    assertEquals(EXPRESSION_NOT_STARTS_WITH[OUTPUT], parseWhereExpression(EXPRESSION_NOT_STARTS_WITH[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_NOT_STARTS_WITH[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_NOT_STARTS_WITH[OUTPUT], whereExpression);
   }
 
   @Test
   public void testStartsWith() {
-    assertEquals(EXPRESSION_STARTS_WITH[OUTPUT], parseWhereExpression(EXPRESSION_STARTS_WITH[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_STARTS_WITH[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_STARTS_WITH[OUTPUT], whereExpression);
   }
 
   @Test
   public void testSimpleEqRelation() {
-    assertEquals(EXPRESSION_EQ[OUTPUT], parseWhereExpression(EXPRESSION_EQ[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_EQ[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_EQ[OUTPUT], whereExpression);
+  
   }
 
   @Test
   public void testSimpleNeRelation() {
-    assertEquals(EXPRESSION_NE[OUTPUT], parseWhereExpression(EXPRESSION_NE[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_NE[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_NE[OUTPUT], whereExpression);
   }
 
   @Test
   public void testBinaryAnd() {
-    assertEquals(EXPRESSION_BINARY_AND[OUTPUT], parseWhereExpression(EXPRESSION_BINARY_AND[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_BINARY_AND[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_BINARY_AND[OUTPUT], whereExpression);
   }
 
   @Test
   public void testBinaryOr() {
-    assertEquals(EXPRESSION_BINARY_OR[OUTPUT], parseWhereExpression(EXPRESSION_BINARY_OR[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_BINARY_OR[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_BINARY_OR[OUTPUT], whereExpression);
   }
 
   @Test
   public void testMemberOr() {
-    assertEquals(EXPRESSION_MEMBER_OR[OUTPUT], parseWhereExpression(EXPRESSION_MEMBER_OR[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_MEMBER_OR[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_MEMBER_OR[OUTPUT], whereExpression);
   }
 
   @Test
   public void testNull() {
-    assertEquals(EXPRESSION_NULL[OUTPUT], parseWhereExpression(EXPRESSION_NULL[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_NULL[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_NULL[OUTPUT], whereExpression);
   }
 
   @Test
   public void testNotNull() {
-    assertEquals(EXPRESSION_NOT_NULL[OUTPUT], parseWhereExpression(EXPRESSION_NOT_NULL[INPUT], false));
+    String whereExpression = parseWhereExpression(EXPRESSION_NOT_NULL[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_NOT_NULL[OUTPUT], whereExpression);
   }
   
   private String parseWhereExpression(final String input, final boolean isExceptionExpected) {
@@ -243,4 +312,109 @@ public class ODataFilterExpressionParserTest {
     }
     return "";
   }
+  
+  @Test
+  public void testStartsWith_BinaryEq() {
+    String whereExpression = parseWhereExpression(
+        EXPRESSION_STARTSWITH_EQBINARY[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_STARTSWITH_EQBINARY[OUTPUT], whereExpression);
+  }
+  
+  @Test
+  public void testBinaryEq_StartsWith() {
+    String whereExpression = parseWhereExpression(
+        EXPRESSION_EQBINARY_STARTSWITH[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_EQBINARY_STARTSWITH[OUTPUT], whereExpression);
+  }
+  
+  public void testStartsWithEq_BinaryEq() {
+    String whereExpression = parseWhereExpression(
+        EXPRESSION_STARTSWITHEQ_EQBINARY[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_STARTSWITHEQ_EQBINARY[OUTPUT], whereExpression);
+  }
+  
+  @Test
+  public void testBinaryEq_StartsWithEq() {
+    String whereExpression = parseWhereExpression(
+        EXPRESSION_EQBINARY_STARTSWITHEQ[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_EQBINARY_STARTSWITHEQ[OUTPUT], whereExpression);
+  }
+  
+  @Test
+  public void testStartsWith_StartsWith() {
+    String whereExpression = parseWhereExpression(
+        EXPRESSION_STARTSWITH_STARTSWITH[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_STARTSWITH_STARTSWITH[OUTPUT], whereExpression);
+  }
+  
+  @Test
+  public void testStartsWithEq_StartsWithEq() {
+    String whereExpression = parseWhereExpression(
+        EXPRESSION_STARTSWITHEQ_STARTSWITHEQ[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_STARTSWITHEQ_STARTSWITHEQ[OUTPUT], whereExpression);
+  }
+  
+  @Test
+  public void testStartsWithEq_AndTrue() {
+    String whereExpression = parseWhereExpression(
+        EXPRESSION_STARTSWITHEQTRUE_ANDTRUE[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_STARTSWITHEQTRUE_ANDTRUE[OUTPUT], whereExpression);
+  }
+  
+  @Test
+  public void testStarts_AndTrue() {
+    String whereExpression = parseWhereExpression(
+        EXPRESSION_STARTSWITH_ANDTRUE[INPUT], false);
+    whereExpression = replacePositionalParameters(whereExpression);
+    assertEquals(EXPRESSION_STARTSWITH_ANDTRUE[OUTPUT], whereExpression);
+  }
+  
+  private String replacePositionalParameters(String whereExpression) {
+    Map<Integer, Object> positionalParameters = ODataExpressionParser.getPositionalParameters();
+    for (Entry<Integer, Object> param : positionalParameters.entrySet()) {
+      Integer key = param.getKey();
+      if (param.getValue() instanceof String) {
+        whereExpression = whereExpression.replaceAll("\\?" + String.valueOf(key), "\'" + param.getValue() + "\'");
+      } else if (param.getValue() instanceof Timestamp || param.getValue() instanceof Calendar){
+        Calendar datetime = (Calendar) param.getValue();
+        String year = String.format("%04d", datetime.get(Calendar.YEAR));
+        String month = String.format("%02d", datetime.get(Calendar.MONTH) + 1);
+        String day = String.format("%02d", datetime.get(Calendar.DAY_OF_MONTH));
+        String hour = String.format("%02d", datetime.get(Calendar.HOUR_OF_DAY));
+        String min = String.format("%02d", datetime.get(Calendar.MINUTE));
+        String sec = String.format("%02d", datetime.get(Calendar.SECOND));
+        String value =
+            year + JPQLStatement.DELIMITER.HYPHEN + month + JPQLStatement.DELIMITER.HYPHEN + day
+                + JPQLStatement.DELIMITER.SPACE + hour + JPQLStatement.DELIMITER.COLON + min
+                + JPQLStatement.DELIMITER.COLON + sec + JPQLStatement.KEYWORD.OFFSET;
+        whereExpression = whereExpression.replaceAll("\\?" + String.valueOf(key), value);
+      } else if(param.getValue() instanceof Byte[]){
+        byte[] byteValue = convertToByte((Byte[])param.getValue());
+        whereExpression = whereExpression.replaceAll("\\?" + String.valueOf(key), new String(byteValue));
+      }else {
+        whereExpression = whereExpression.replaceAll("\\?" + String.valueOf(key), param.getValue().toString());
+      }
+    }
+    ODataExpressionParser.reInitializePositionalParameters();
+    return whereExpression;
+  }
+  
+  private byte[] convertToByte(Byte[] value) {
+    int length =  value.length;
+    if (length == 0) {
+        return new byte[0];
+    }
+    final byte[] result = new byte[length];
+    for (int i = 0; i < length; i++) {
+        result[i] = value[i];
+    }
+    return result;
+ }
 }

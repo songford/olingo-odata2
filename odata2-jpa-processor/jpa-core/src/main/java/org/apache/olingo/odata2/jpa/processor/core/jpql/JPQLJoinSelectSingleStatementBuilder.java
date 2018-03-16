@@ -26,6 +26,8 @@ import org.apache.olingo.odata2.jpa.processor.api.jpql.JPQLContextView;
 import org.apache.olingo.odata2.jpa.processor.api.jpql.JPQLJoinSelectSingleContextView;
 import org.apache.olingo.odata2.jpa.processor.api.jpql.JPQLStatement;
 import org.apache.olingo.odata2.jpa.processor.api.jpql.JPQLStatement.JPQLStatementBuilder;
+import org.apache.olingo.odata2.jpa.processor.core.ODataExpressionParser;
+import org.apache.olingo.odata2.jpa.processor.core.ODataParameterizedWhereExpressionUtil;
 
 public class JPQLJoinSelectSingleStatementBuilder extends JPQLStatementBuilder {
 
@@ -39,6 +41,8 @@ public class JPQLJoinSelectSingleStatementBuilder extends JPQLStatementBuilder {
   @Override
   public JPQLStatement build() throws ODataJPARuntimeException {
     jpqlStatement = createStatement(createJPQLQuery());
+    ODataParameterizedWhereExpressionUtil.setJPQLStatement(jpqlStatement.toString());
+    ODataExpressionParser.reInitializePositionalParameters();
     return jpqlStatement;
 
   }
@@ -52,7 +56,7 @@ public class JPQLJoinSelectSingleStatementBuilder extends JPQLStatementBuilder {
     jpqlQuery.append(context.getSelectExpression()).append(JPQLStatement.DELIMITER.SPACE);
     jpqlQuery.append(JPQLStatement.KEYWORD.FROM).append(JPQLStatement.DELIMITER.SPACE);
 
-    if (context.getJPAJoinClauses() != null && context.getJPAJoinClauses().size() > 0) {
+    if (context.getJPAJoinClauses() != null && !context.getJPAJoinClauses().isEmpty()) {
       List<JPAJoinClause> joinClauseList = context.getJPAJoinClauses();
       JPAJoinClause joinClause = joinClauseList.get(0);
       String joinCondition = joinClause.getJoinCondition();

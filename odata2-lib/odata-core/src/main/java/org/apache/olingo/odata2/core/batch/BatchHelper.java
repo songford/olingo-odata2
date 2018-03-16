@@ -42,7 +42,7 @@ public class BatchHelper {
   public static final String BINARY_ENCODING = "binary";
   public static final String UTF8_ENCODING = "UTF-8";
   public static final String ISO_ENCODING = "ISO-8859-1";
-  public static String DEFAULT_ENCODING = "UTF-8";
+  public static String DEFAULT_ENCODING = "ISO-8859-1";
   public static final String HTTP_CONTENT_TRANSFER_ENCODING = "Content-Transfer-Encoding";
   public static final String HTTP_CONTENT_ID = "Content-Id";
   public static final String MIME_HEADER_CONTENT_ID = "MimeHeader-ContentId";
@@ -145,7 +145,7 @@ public class BatchHelper {
     }
 
     public BodyBuilder append(String string) {
-      byte [] b = string.getBytes(CHARSET_ISO_8859_1);
+      byte [] b = string.getBytes(DEFAULT_CHARSET);
       put(b);
       return this;
     }
@@ -223,6 +223,7 @@ public class BatchHelper {
 
     public Body() {
       this.content = EMPTY_BYTES;
+      setDefaultValues(ISO_ENCODING);
     }
 
     public int getLength() {
@@ -253,12 +254,14 @@ public class BatchHelper {
       if(entity == null) {
         return EMPTY_BYTES;
       } else if(entity instanceof InputStream) {
+		  ReadableByteChannel ic = null;
+		  WritableByteChannel oc = null;
         try {
           extractCharset(ContentType.parse(response.getHeader("Content-Type")));
           ByteArrayOutputStream output = new ByteArrayOutputStream();
           ByteBuffer inBuffer = ByteBuffer.allocate(BUFFER_SIZE);
-          ReadableByteChannel ic = Channels.newChannel((InputStream) entity);
-          WritableByteChannel oc = Channels.newChannel(output);
+          ic = Channels.newChannel((InputStream) entity);
+          oc = Channels.newChannel(output);
           while (ic.read(inBuffer) > 0) {
             inBuffer.flip();
             oc.write(inBuffer);
@@ -267,6 +270,21 @@ public class BatchHelper {
           return output.toByteArray();
         } catch (IOException e) {
           throw new ODataRuntimeException("Error on reading request content");
+        } finally {
+          try {
+			  if (ic != null) {
+				ic.close();  
+			  }
+          } catch (IOException e) {
+            throw new ODataRuntimeException("Error closing the Readable Byte Channel", e);
+          }
+          try {
+			  if (oc != null) {
+				oc.close();  
+			  }
+          } catch (IOException e) {
+            throw new ODataRuntimeException("Error closing the Writable Byte Channel", e);
+          }
         }
       } else if (entity instanceof byte[]) {
         setDefaultValues(ISO_ENCODING);

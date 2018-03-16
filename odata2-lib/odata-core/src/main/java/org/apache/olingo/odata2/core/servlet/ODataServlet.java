@@ -177,6 +177,7 @@ public class ODataServlet extends HttpServlet {
           throws IOException {
     try {
       final String pathSplitAsString = getInitParameter(ODataServiceFactory.PATH_SPLIT_LABEL);
+      final String formEncoding = getInitParameter(ODataServiceFactory.ACCEPT_FORM_ENCODING);
       int pathSplit = 0;
       if (pathSplitAsString != null) {
         pathSplit = Integer.parseInt(pathSplitAsString);
@@ -193,7 +194,7 @@ public class ODataServlet extends HttpServlet {
           .acceptHeaders(RestUtil.extractAcceptHeaders(req.getHeader(HttpHeaders.ACCEPT)))
           .acceptableLanguages(RestUtil.extractAcceptableLanguage(req.getHeader(HttpHeaders.ACCEPT_LANGUAGE)))
           .pathInfo(RestUtil.buildODataPathInfo(req, pathSplit))
-          .allQueryParameters(RestUtil.extractAllQueryParameters(req.getQueryString()))
+          .allQueryParameters(RestUtil.extractAllQueryParameters(req.getQueryString(), formEncoding))
           .requestHeaders(RestUtil.extractHeaders(req))
           .body(req.getInputStream())
           .build();
@@ -347,7 +348,6 @@ public class ODataServlet extends HttpServlet {
     ODataExceptionWrapper exceptionWrapper = new ODataExceptionWrapper(req, serviceFactory);
     ODataResponse response =
         exceptionWrapper.wrapInExceptionResponse(new ODataNotImplementedException(messageReference));
-//    resp.setStatus(HttpStatusCodes.NOT_IMPLEMENTED.getStatusCode());
     createResponse(resp, response);
   }
 

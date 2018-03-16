@@ -46,7 +46,7 @@ import org.apache.olingo.odata2.jpa.processor.api.model.JPAEdmFunctionImportView
 import org.apache.olingo.odata2.jpa.processor.api.model.JPAEdmMapping;
 import org.apache.olingo.odata2.jpa.processor.api.model.JPAEdmSchemaView;
 import org.apache.olingo.odata2.jpa.processor.core.access.model.JPAEdmNameBuilder;
-import org.apache.olingo.odata2.jpa.processor.core.access.model.JPATypeConvertor;
+import org.apache.olingo.odata2.jpa.processor.core.access.model.JPATypeConverter;
 
 public class JPAEdmFunctionImport extends JPAEdmBaseViewImpl implements JPAEdmFunctionImportView {
 
@@ -151,7 +151,7 @@ public class JPAEdmFunctionImport extends JPAEdmBaseViewImpl implements JPAEdmFu
       if (edmAnnotationFunctionImport != null && edmAnnotationFunctionImport.returnType() != null) {
         FunctionImport functionImport = new FunctionImport();
 
-        if (edmAnnotationFunctionImport.name().equals("")) {
+        if ("".equals(edmAnnotationFunctionImport.name())) {
           functionImport.setName(method.getName());
         } else {
           functionImport.setName(edmAnnotationFunctionImport.name());
@@ -186,14 +186,14 @@ public class JPAEdmFunctionImport extends JPAEdmBaseViewImpl implements JPAEdmFu
           if (element instanceof EdmFunctionImportParameter) {
             EdmFunctionImportParameter annotation = (EdmFunctionImportParameter) element;
             FunctionImportParameter functionImportParameter = new FunctionImportParameter();
-            if (annotation.name().equals("")) {
+            if ("".equals(annotation.name())) {
               throw ODataJPAModelException.throwException(ODataJPAModelException.FUNC_PARAM_NAME_EXP.addContent(method
                   .getDeclaringClass().getName(), method.getName()), null);
             } else {
               functionImportParameter.setName(annotation.name());
             }
 
-            functionImportParameter.setType(JPATypeConvertor.convertToEdmSimpleType(parameterType, null));
+            functionImportParameter.setType(JPATypeConverter.convertToEdmSimpleType(parameterType, null));
 
             Facets facets = new Facets();
             if (annotation.facets().maxLength() > 0) {
@@ -241,14 +241,14 @@ public class JPAEdmFunctionImport extends JPAEdmBaseViewImpl implements JPAEdmFu
 
         if (returnType.type() == ReturnType.Type.ENTITY) {
           String entitySet = edmAnnotationFunctionImport.entitySet();
-          if (entitySet.equals("")) {
+          if ("".equals(entitySet)) {
             throw ODataJPAModelException.throwException(ODataJPAModelException.FUNC_ENTITYSET_EXP, null);
           }
           functionImport.setEntitySet(entitySet);
         }
 
         Class<?> methodReturnType = method.getReturnType();
-        if (methodReturnType == null || methodReturnType.getName().equals("void")) {
+        if (methodReturnType == null || "void".equals(methodReturnType.getName())) {
           throw ODataJPAModelException.throwException(ODataJPAModelException.FUNC_RETURN_TYPE_EXP.addContent(method
               .getDeclaringClass(), method.getName()), null);
         }
@@ -268,7 +268,7 @@ public class JPAEdmFunctionImport extends JPAEdmBaseViewImpl implements JPAEdmFu
           functionReturnType.setTypeName(JPAEdmNameBuilder.build(schemaView, edmEntityType.getName()));
           break;
         case SIMPLE:
-          EdmSimpleTypeKind edmSimpleTypeKind = JPATypeConvertor.convertToEdmSimpleType(methodReturnType, null);
+          EdmSimpleTypeKind edmSimpleTypeKind = JPATypeConverter.convertToEdmSimpleType(methodReturnType, null);
           functionReturnType.setTypeName(edmSimpleTypeKind.getFullQualifiedName());
 
           break;
